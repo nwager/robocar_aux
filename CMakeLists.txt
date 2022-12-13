@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.12)
+
+# Import pico SDK
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+project(robocar_aux C CXX ASM)
+set(TARGET_NAME robocar_aux)
+
+# Initialize SDK
+pico_sdk_init()
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+
+add_subdirectory(src)
