@@ -1,6 +1,8 @@
 add_executable(${TARGET_NAME}
     main.c
-    mpu6050_utils.c
+    mpu6050.c
+    core1_main.c
+    vec.c
 )
 
 target_include_directories(${TARGET_NAME}
@@ -11,8 +13,10 @@ target_include_directories(${TARGET_NAME}
 # Import pico_stdlib
 target_link_libraries(${TARGET_NAME}
     pico_stdlib
+    pico_multicore
     hardware_i2c
     hardware_gpio
+    hardware_sync
     hardware_pwm
 )
 
