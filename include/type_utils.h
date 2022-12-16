@@ -19,4 +19,10 @@
 /// @brief Unsigned microseconds.
 typedef uint64_t umicros_t;
 
+/**
+ * @brief Control message sent to, or received from, master.
+ * 
+ */
+typedef struct { float vel, steer; } control_msg_t;
+
 #endif // _TYPE_UTILS_H_

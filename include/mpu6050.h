@@ -17,10 +17,15 @@
 #ifndef _MPU6050_H_
 #define _MPU6050_H_
 
+#include <stdio.h>
+#include <FreeRTOS.h>
+#include <task.h>
+#include <queue.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
 #include "vec.h"
+#include "type_utils.h"
 
 #ifndef I2C_INSTANCE
     #define I2C_INSTANCE i2c_default
@@ -52,10 +57,25 @@
 
 /// @brief Stores current accelerometer g-range for calculations.
 extern float accel_range;
+
 /// @brief Stores gravity offset vector from calibration.
-extern float gravity_offset[3];
+extern vec3_t gravity_offset;
+
 /// @brief Stores forward direction from calibration (unit vector).
-extern float fwd_dir[3];
+extern vec3_t fwd_dir;
+
+typedef struct {
+    control_msg_t *control_state; // current controls
+    QueueHandle_t accel_queue; // queue to send acceleration data
+} mpu6050_task_arg_t;
+
+/**
+ * @brief Task periodically reads MPU6050 accelerometer and updates the
+ *     estimated speed.
+ * 
+ * @param p Pointer to mpu6050_task_arg_t.
+ */
+void mpu6050_task(void *p);
 
 /**
  * @brief Send a register-value command to MPU6050 over I2C.
@@ -70,7 +90,7 @@ bool mpu6050_command(uint8_t reg, uint8_t val);
 /**
  * @brief Turn on MPU6050.
  */
-void mpu6050_init();
+void mpu6050_activate();
 
 /**
  * @brief Set the frequency cutoff for the integrated digital low pass
@@ -93,9 +113,9 @@ void mpu6050_set_range(uint8_t range);
  * @brief Read from the MPU6050 accelerometer and get the measurements as
  *     floats in m/s/s.
  * 
- * @param out Output vector to store the measurements.
+ * @param out Pointer to output vector to store the measurements.
  */
-void mpu6050_get_accel(float out[3]);
+void mpu6050_get_accel(vec3_t *out);
 
 /**
  * @brief Perform calibration procedure to determine gravity offset and
