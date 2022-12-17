@@ -1,7 +1,8 @@
 add_executable(${TARGET_NAME}
     main.c
     mpu6050.c
-    vec.c
+    velocity_handler.c
+    vec3.c
 )
 
 target_include_directories(${TARGET_NAME}
@@ -19,6 +20,7 @@ target_link_libraries(${TARGET_NAME}
     pico_stdlib
     pico_multicore
     hardware_i2c
+    hardware_gpio
 )
 
 # enable usb

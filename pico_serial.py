@@ -23,6 +23,15 @@ while True:
         data = ser.read(12)
         vals = struct.unpack("3f", data)
         print(f"Received {vals}")
+    elif cmd == 0xAA:
+        ser.write(bytes([cmd, 0]))
+        res = ser.read(1)
+        print(f"Received {list(res)}")
+    elif cmd == 0x10:
+        ser.write(bytes([cmd, 4]))
+        data = ser.read(4)
+        vals = struct.unpack("1f", data)
+        print(f"Received {vals}")
     else:
         ser.write(bytes([cmd, 2*4]))
         data = ser.read(8)

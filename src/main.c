@@ -10,7 +10,8 @@
 
 #include "mpu6050.h"
 #include "type_utils.h"
-#include "vec.h"
+#include "vec3.h"
+#include "velocity_handler.h"
 #include "freertos_hooks.h"
 
 #define MASTER_CONTROL_MSG_CODE 0xFF
@@ -20,8 +21,14 @@
 #define I2C_BAUD_RATE (400 * 1000)
 
 typedef struct {
+    uint8_t command;
+    uint8_t payload_size;
+} msg_header_t;
+
+typedef struct {
     control_msg_t *control_state;
     QueueHandle_t accel_queue;
+    QueueHandle_t vel_queue;
 } process_master_task_arg_t;
 static void process_master_task(void *p);
 
@@ -29,6 +36,8 @@ static int read_from_master(uint8_t buf[], uint n_bytes);
 static void send_to_master(uint8_t buf[], uint n_bytes);
 static inline void clear_master_buffer();
 static void send_error_master(uint n_bytes);
+static inline bool read_master_header(msg_header_t *dst);
+
 static void i2c_setup();
 
 static TickType_t start_tick;
@@ -42,9 +51,14 @@ int main() {
 
     control_msg_t control_state = { 0.0, 0.0 };
 
-    QueueHandle_t accel_queue = xQueueCreate(1, sizeof(vec3_t));
+    QueueHandle_t accel_queue = xQueueCreate(1, sizeof(accel_stamped_t));
+    QueueHandle_t vel_queue = xQueueCreate(1, sizeof(velocity_stamped_t));
 
-    process_master_task_arg_t process_master_arg = { &control_state, accel_queue };
+    process_master_task_arg_t process_master_arg = {
+        &control_state,
+        accel_queue,
+        vel_queue
+    };
     xTaskCreate(
         process_master_task,
         "Process_Master_Task",
@@ -64,6 +78,16 @@ int main() {
         NULL
     );
 
+    update_vel_task_arg_t update_vel_arg = { vel_queue, accel_queue };
+    xTaskCreate(
+        update_vel_task,
+        "Update_Vel_Task",
+        256,
+        &update_vel_arg,
+        tskIDLE_PRIORITY + 1,
+        NULL
+    );
+
     vTaskStartScheduler();
 
     while (1); // should never reach here
@@ -74,55 +98,83 @@ void process_master_task(void *p) {
     
     process_master_task_arg_t *arg = p;
 
+    TaskHandle_t mpu6050_task = xTaskGetHandle("MPU6050_Task");
+
     while (1) {
         vTaskDelayUntil(&start_time, pdMS_TO_TICKS(100));
 
-        int cmd = getchar_timeout_us(0);
-        if (cmd == PICO_ERROR_TIMEOUT)
-            continue; // no cmd, reset
-        // master should specify how many bytes are sent or expected
-        int payload_size = getchar_timeout_us(0);
-        if (payload_size == PICO_ERROR_TIMEOUT)
-            continue; // no payload size, reset
+        msg_header_t hdr;
+        if (!read_master_header(&hdr))
+            continue; // if fail, we know buffer is empty and no payload
         
-        if (cmd == MASTER_CONTROL_MSG_CODE) {
+        if (hdr.command == MASTER_CONTROL_MSG_CODE) {
             // receive control message
-            if (payload_size != sizeof(control_msg_t)) {
+            if (hdr.payload_size != sizeof(control_msg_t)) {
                 // payload size mismatch, reset
                 clear_master_buffer();
-                send_error_master(payload_size);
+                send_error_master(hdr.payload_size);
                 continue;
             }
             control_msg_t msg;
-            read_from_master((uint8_t*)&msg, payload_size);
-            // success
-            putchar_raw(0x00);
+            read_from_master((uint8_t*)&msg, hdr.payload_size);
+            putchar_raw(0x00); // ack byte
             continue;
         }
 
-        // shouldn't receive data
+
+        if (hdr.command == 0xAA) {
+            if (hdr.payload_size != 0) {
+                send_error_master(hdr.payload_size);
+                continue;
+            }
+            xTaskNotifyGive(mpu6050_task);
+            putchar_raw(0x00); // ack byte
+            continue;
+        }
+
+        // shouldn't receive data so buffer should be empty
         if (getchar_timeout_us(0) != PICO_ERROR_TIMEOUT) {
             clear_master_buffer();
-            send_error_master(payload_size);
+            send_error_master(hdr.payload_size);
             continue;
         }
         
-        if (cmd == 0xAC) {
-            if (payload_size != sizeof(vec3_t)) {
-                send_error_master(payload_size);
+        if (hdr.command == 0xAC) {
+            if (hdr.payload_size != sizeof(vec3_t)) {
+                send_error_master(hdr.payload_size);
                 continue;
             }
-            vec3_t accel;
-            xQueueReceive(arg->accel_queue, &accel, pdMS_TO_TICKS(50));
-            send_to_master((uint8_t*)&accel, payload_size);
+            accel_stamped_t accel;
+            BaseType_t status = xQueuePeek(
+                arg->accel_queue, &accel, pdMS_TO_TICKS(50)
+            );
+            if (status == pdTRUE) {
+                send_to_master((uint8_t*)&(accel.accel), hdr.payload_size);
+            } else {
+                send_error_master(hdr.payload_size);
+            }
+            continue;
+        }
+
+        if (hdr.command == 0x10) {
+            if (hdr.payload_size == sizeof(float)) {
+                velocity_stamped_t tmp;
+                if (xQueuePeek(arg->vel_queue, &tmp, 0) == pdTRUE) {
+                    send_to_master((uint8_t*)&(tmp.vel), hdr.payload_size);
+                } else {
+                    send_error_master(hdr.payload_size);
+                }
+            } else {
+                send_error_master(hdr.payload_size);
+            }
             continue;
         }
 
         // not a control msg, master requests control data
-        if (payload_size == sizeof(control_msg_t)) {
-            send_to_master((uint8_t*)(arg->control_state), payload_size);
+        if (hdr.payload_size == sizeof(control_msg_t)) {
+            send_to_master((uint8_t*)(arg->control_state), hdr.payload_size);
         } else {
-            send_error_master(payload_size);
+            send_error_master(hdr.payload_size);
         }
     } // while (1)
 }
@@ -144,13 +196,19 @@ static void send_to_master(uint8_t buf[], uint n_bytes) {
 }
 
 static inline void clear_master_buffer() {
-    while (getchar_timeout_us(0) != PICO_ERROR_TIMEOUT) {}
+    while (getchar_timeout_us(0) != PICO_ERROR_TIMEOUT);
 }
 
 static void send_error_master(uint n_bytes) {
     for (int i = 0; i < n_bytes; i++) {
         putchar_raw(0xFF);
     }
+}
+
+static inline bool read_master_header(msg_header_t *dst) {
+    return read_from_master(
+            (uint8_t*)dst, sizeof(msg_header_t)
+        ) == sizeof(msg_header_t);
 }
 
 static void i2c_setup() {

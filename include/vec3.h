@@ -1,5 +1,5 @@
 /**
- * @file vec.h
+ * @file vec3.h
  * @author Noah Wager (noahwager@gmail.com)
  * @brief Simple vector math functions.
  * @version 0.1
@@ -93,6 +93,33 @@ void vec_copy(vec3_t *src, vec3_t *dst);
  */
 float vec_mag(vec3_t *vec);
 
+/**
+ * @brief Returns dot product of two vectors <a, b>.
+ * 
+ * @param a Pointer to operand vector 1.
+ * @param b Pointer to operand vector 2.
+ * @return (float) Dot product of a and b.
+ */
+float vec_dot(vec3_t *a, vec3_t *b);
+
+/**
+ * @brief Returns resultant vector from projecting a onto b.
+ * 
+ * @param a Pointer to vector to be projected.
+ * @param b Pointer to vector on which a is projected.
+ * @param out Output vector.
+ */
+void vec_project(vec3_t *a, vec3_t *b, vec3_t *out);
+
+/**
+ * @brief Returns resultant vector from projecting v onto the given unit
+ *     vector. This lets us skip one dot product operation.
+ * 
+ * @param v Pointer to vector to be projected.
+ * @param unit Pointer to unit vector on which to be projected.
+ * @param out Output vector.
+ */
+void vec_project_unit(vec3_t *v, vec3_t *unit, vec3_t *out);
 
 #ifndef NO_PRINT
 

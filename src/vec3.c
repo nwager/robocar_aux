@@ -1,4 +1,4 @@
-#include "vec.h"
+#include "vec3.h"
 
 void vec_zero(vec3_t *vec) {
     for (int i = 0; i < 3; i++) {
@@ -46,6 +46,22 @@ float vec_mag(vec3_t *vec) {
         sq_sum += vec->v[i] * vec->v[i];
     }
     return sqrtf(sq_sum);
+}
+
+float vec_dot(vec3_t *a, vec3_t *b) {
+    float sum = 0.0;
+    for (int i = 0; i < 3; i++) {
+        sum += a->v[i] * b->v[i];
+    }
+    return sum;
+}
+
+void vec_project(vec3_t *a, vec3_t *b, vec3_t *out) {
+    vec_scalar_mul(b, vec_dot(a, b) / vec_dot(b, b), out);
+}
+
+void vec_project_unit(vec3_t *v, vec3_t *unit, vec3_t *out) {
+    vec_scalar_mul(unit, vec_dot(v, unit), out);
 }
 
 #ifndef NO_PRINT

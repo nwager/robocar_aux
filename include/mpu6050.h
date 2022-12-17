@@ -18,14 +18,16 @@
 #define _MPU6050_H_
 
 #include <stdio.h>
+#include <limits.h> // for ULONG_MAX
 #include <FreeRTOS.h>
 #include <task.h>
 #include <queue.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
-#include "vec.h"
+#include "vec3.h"
 #include "type_utils.h"
+#include "velocity_handler.h"
 
 #ifndef I2C_INSTANCE
     #define I2C_INSTANCE i2c_default
@@ -123,5 +125,14 @@ void mpu6050_get_accel(vec3_t *out);
  *
  */
 void mpu6050_calibrate();
+
+/**
+ * @brief Returns the forward component of the given acceleration vector.
+ * 
+ * @param total_accel Pointer to acceleration vector (no adjustments for
+ *     direction or gravity).
+ * @return (float) The forward component of the acceleration vector in m/s/s.
+ */
+float mpu6050_get_fwd_from_total(vec3_t *total_accel);
 
 #endif // _MPU6050_H_

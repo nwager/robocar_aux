@@ -15,6 +15,9 @@
 #define _TYPE_UTILS_H_
 
 #include <stdint.h>
+#include <FreeRTOS.h>
+
+#include "vec3.h"
 
 /// @brief Unsigned microseconds.
 typedef uint64_t umicros_t;
@@ -24,5 +27,24 @@ typedef uint64_t umicros_t;
  * 
  */
 typedef struct { float vel, steer; } control_msg_t;
+
+/**
+ * @brief Acceleration vector and the system time it was measured.
+ * 
+ */
+typedef struct {
+    absolute_time_t time;
+    vec3_t accel;
+} accel_stamped_t;
+
+
+/**
+ * @brief Velocity and the system time it was measured.
+ * 
+ */
+typedef struct {
+    absolute_time_t time;
+    float vel;
+} velocity_stamped_t;
 
 #endif // _TYPE_UTILS_H_
