@@ -9,25 +9,10 @@
  * 
  */
 
-#ifndef _VELOCITY_HANDLER_H_
-#define _VELOCITY_HANDLER_H_
+#ifndef VELOCITY_HANDLER_H
+#define VELOCITY_HANDLER_H
 
-#include <limits.h> // for ULONG_MAX
-
-#include <FreeRTOS.h>
-#include <task.h>
-#include <queue.h>
-
-#include "pico/stdlib.h"
-#include "hardware/gpio.h"
-
-#include "type_utils.h"
-#include "mpu6050.h"
-
-#define WHEEL_REV_GPIO 15
-#define PI 3.14159
-#define WHEEL_R_M (49.68 / 1000)
-#define WHEEL_C_M (2.0 * PI * WHEEL_R_M)
+#include <queue.h> // for QueueHandle_t
 
 #define WHEEL_NOTIF_MASK (1 << 0)
 #define ACCEL_NOTIF_MASK (1 << 1)
@@ -38,11 +23,12 @@ typedef struct {
 } update_vel_task_arg_t;
 
 /**
- * @brief Updates velocity on wheel revolution interrupt and publishes
- *     to queue.
+ * @brief Updates velocity from wheel revolution and acceleration
+ *     measurements and then pushes new velocity to queue.
+ *     Blocked unless new measurements are available.
  * 
  * @param p Pointer to update_vel_task_arg_t.
  */
 void update_vel_task(void *p);
 
-#endif // _VELOCITY_HANDLER_H
+#endif /* VELOCITY_HANDLER_H */

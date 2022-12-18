@@ -1,5 +1,5 @@
-#ifndef _FREERTOS_HOOKS_H_
-#define _FREERTOS_HOOKS_H_
+#ifndef FREERTOS_HOOKS_H
+#define FREERTOS_HOOKS_H
 
 #include <FreeRTOS.h>
 #include <task.h>
@@ -52,4 +52,4 @@ void vApplicationTickHook( void ) {
     convenient place to implement timer functionality.*/
 }
 
-#endif // _FREERTOS_HOOKS_H_
+#endif /* FREERTOS_HOOKS_H */

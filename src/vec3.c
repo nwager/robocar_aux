@@ -1,3 +1,9 @@
+#ifndef NO_PRINT
+#include <stdio.h>
+#endif // ifndef NO_PRINT
+
+#include "pico/float.h"
+
 #include "vec3.h"
 
 void vec_zero(vec3_t *vec) {

@@ -11,36 +11,20 @@
  * Defines MPU6050 register addresses and values to write to them. The
  * methods issue commmands to the MPU6050 and receive data via the pico's
  * I2C bus. I2C0 is used by default, but you can change the I2C bus by
- * defining I2C_INSTANCE as the pico I2C identifier before including this.
+ * defining MPU6050_I2C as the pico I2C identifier before including this.
  */
 
-#ifndef _MPU6050_H_
-#define _MPU6050_H_
+#ifndef MPU6050_H
+#define MPU6050_H
 
-#include <stdio.h>
-#include <limits.h> // for ULONG_MAX
-#include <FreeRTOS.h>
-#include <task.h>
-#include <queue.h>
-#include "pico/stdlib.h"
-#include "hardware/i2c.h"
+#include <queue.h> // for QueueHandle_t
 
-#include "vec3.h"
-#include "type_utils.h"
-#include "velocity_handler.h"
+#include "type_utils.h" // for control_msg_t
+#include "vec3.h" // for vec3_t
 
-#ifndef I2C_INSTANCE
-    #define I2C_INSTANCE i2c_default
+#ifndef MPU6050_I2C
+    #define MPU6050_I2C i2c_default
 #endif
-
-#define MPU6050_ADDR 0x68
-#define GS_TO_MSS 9.8 // factor to convert from gs to m/s/s
-
-// registers
-#define MPU6050_CONFIG 0x1A
-#define MPU6050_ACCEL_CONFIG 0x1C
-#define MPU6050_ACCEL_REG 0x3B
-#define MPU6050_PWR_MGMT_1 0x6B
 
 // values
 // dlpf frequency cutoffs  (values for accelerometer)
@@ -135,4 +119,4 @@ void mpu6050_calibrate();
  */
 float mpu6050_get_fwd_from_total(vec3_t *total_accel);
 
-#endif // _MPU6050_H_
+#endif /* MPU6050_H */

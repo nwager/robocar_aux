@@ -1,8 +1,14 @@
+include($ENV{PICO_SDK_PATH}/tools/CMakeLists.txt)
+
 add_executable(${TARGET_NAME}
     main.c
     mpu6050.c
     velocity_handler.c
     vec3.c
+)
+
+pico_generate_pio_header(${TARGET_NAME}
+    ${PROJECT_SOURCE_DIR}/pio/wheel_rev.pio
 )
 
 target_include_directories(${TARGET_NAME}
@@ -21,6 +27,7 @@ target_link_libraries(${TARGET_NAME}
     pico_multicore
     hardware_i2c
     hardware_gpio
+    hardware_pio
 )
 
 # enable usb

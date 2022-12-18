@@ -8,10 +8,11 @@
 #include "pico/binary_info.h"
 #include "hardware/i2c.h"
 
-#include "mpu6050.h"
 #include "type_utils.h"
 #include "vec3.h"
 #include "velocity_handler.h"
+#include "task_names.h"
+#include "mpu6050.h"
 #include "freertos_hooks.h"
 
 #define MASTER_CONTROL_MSG_CODE 0xFF
@@ -38,11 +39,18 @@ static inline void clear_master_buffer();
 static void send_error_master(uint n_bytes);
 static inline bool read_master_header(msg_header_t *dst);
 
+/**
+ * @brief Sets up acceleration and velocity queues and initializes them
+ *     with 0-values.
+ * 
+ * @param acc Pointer to acceleration queue handle to set.
+ * @param vel Pointer to velocity queue handle to set.
+ */
+static void setup_queues(QueueHandle_t *accq, QueueHandle_t *velq);
 static void i2c_setup();
 
-static TickType_t start_tick;
-
 int main() {
+
     // usb init
     stdio_init_all();
 
@@ -51,8 +59,8 @@ int main() {
 
     control_msg_t control_state = { 0.0, 0.0 };
 
-    QueueHandle_t accel_queue = xQueueCreate(1, sizeof(accel_stamped_t));
-    QueueHandle_t vel_queue = xQueueCreate(1, sizeof(velocity_stamped_t));
+    QueueHandle_t accel_queue, vel_queue;
+    setup_queues(&accel_queue, &vel_queue);
 
     process_master_task_arg_t process_master_arg = {
         &control_state,
@@ -61,8 +69,8 @@ int main() {
     };
     xTaskCreate(
         process_master_task,
-        "Process_Master_Task",
-        128,
+        PROCESS_MASTER_TASK_NAME,
+        512,
         &process_master_arg,
         configMAX_PRIORITIES,
         NULL
@@ -71,8 +79,8 @@ int main() {
     mpu6050_task_arg_t mpu6050_arg = { &control_state, accel_queue };
     xTaskCreate(
         mpu6050_task,
-        "MPU6050_Task",
-        128,
+        MPU6050_TASK_NAME,
+        256,
         &mpu6050_arg,
         tskIDLE_PRIORITY,
         NULL
@@ -81,8 +89,8 @@ int main() {
     update_vel_task_arg_t update_vel_arg = { vel_queue, accel_queue };
     xTaskCreate(
         update_vel_task,
-        "Update_Vel_Task",
-        256,
+        UPDATE_VEL_TASK_NAME,
+        512,
         &update_vel_arg,
         tskIDLE_PRIORITY + 1,
         NULL
@@ -98,7 +106,7 @@ void process_master_task(void *p) {
     
     process_master_task_arg_t *arg = p;
 
-    TaskHandle_t mpu6050_task = xTaskGetHandle("MPU6050_Task");
+    TaskHandle_t mpu6050_task = xTaskGetHandle(MPU6050_TASK_NAME);
 
     while (1) {
         vTaskDelayUntil(&start_time, pdMS_TO_TICKS(100));
@@ -211,8 +219,18 @@ static inline bool read_master_header(msg_header_t *dst) {
         ) == sizeof(msg_header_t);
 }
 
+static void setup_queues(QueueHandle_t *accq, QueueHandle_t *velq) {
+    *accq = xQueueCreate(1, sizeof(accel_stamped_t));
+    accel_stamped_t zero_a = { nil_time, {0, 0, 0} };
+    xQueueSendToBack(*accq, &zero_a, 0);
+
+    *velq = xQueueCreate(1, sizeof(velocity_stamped_t));
+    velocity_stamped_t zero_v = { nil_time, 0 };
+    xQueueSendToBack(*velq, &zero_v, 0);
+}
+
 static void i2c_setup() {
-    i2c_init(I2C_INSTANCE, I2C_BAUD_RATE);
+    i2c_init(MPU6050_I2C, I2C_BAUD_RATE);
     gpio_set_function(I2C_SDA_GPIO, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL_GPIO, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SDA_GPIO);

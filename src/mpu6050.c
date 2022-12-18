@@ -1,14 +1,41 @@
+#include <stdio.h>
+#include <limits.h> // for ULONG_MAX
+#include <FreeRTOS.h>
+#include <task.h>
+#include <queue.h>
+#include "pico/stdlib.h"
+#include "hardware/i2c.h"
+
+#include "vec3.h"
+#include "type_utils.h"
+#include "velocity_handler.h"
+#include "task_names.h"
+
 #include "mpu6050.h"
+
+#define ACCEL_RANGE MPU6050_ACCEL_RANGE_8G
+#define DLPF_FREQ MPU6050_DLPF_94HZ
+
+#define MPU6050_ADDR 0x68
+#define GS_TO_MSS 9.8 // factor to convert from gs to m/s/s
+
+// registers
+#define MPU6050_CONFIG 0x1A
+#define MPU6050_ACCEL_CONFIG 0x1C
+#define MPU6050_ACCEL_REG 0x3B
+#define MPU6050_PWR_MGMT_1 0x6B
 
 float accel_range = 2.0;
 vec3_t gravity_offset = { 0.0, 0.0, 10.0 };
 vec3_t fwd_dir = { 1.0, 0.0, 0.0 };
 
-static void mpu6050_reset() {
-    mpu6050_activate();
-    mpu6050_set_dlpf(MPU6050_DLPF_94HZ);
-    mpu6050_set_range(MPU6050_ACCEL_RANGE_8G);
-}
+/**
+ * @brief Reset MPU6050 by waking it up and setting accelerometer range
+ *     and DLPF frequency.
+ * 
+ */
+static void mpu6050_reset();
+
 void mpu6050_task(void *p) {
 
     mpu6050_task_arg_t *arg = p;
@@ -19,7 +46,7 @@ void mpu6050_task(void *p) {
     mpu6050_reset();
     accel_stamped_t data;
 
-    TaskHandle_t update_vel_task = xTaskGetHandle("Update_Vel_Task");
+    TaskHandle_t update_vel_task = xTaskGetHandle(UPDATE_VEL_TASK_NAME);
 
     while (1) {
         if (xTaskNotifyWait(0, ULONG_MAX, NULL, 0) == pdTRUE) {
@@ -37,7 +64,7 @@ void mpu6050_task(void *p) {
 bool mpu6050_command(uint8_t reg, uint8_t val) {
     uint8_t buf[] = {reg, val};
     int status = i2c_write_timeout_us(
-        I2C_INSTANCE,
+        MPU6050_I2C,
         MPU6050_ADDR,
         buf,
         2,
@@ -128,4 +155,10 @@ float mpu6050_get_fwd_from_total(vec3_t *total_accel) {
     vec_scalar_mul(&fwd_dir, vcos * tmp_mag, &tmp);
     // correct sign
     return (vcos < 0 ? -1.0 : 1.0) * vec_mag(&tmp);
+}
+
+static void mpu6050_reset() {
+    mpu6050_activate();
+    mpu6050_set_dlpf(DLPF_FREQ);
+    mpu6050_set_range(ACCEL_RANGE);
 }

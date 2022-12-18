@@ -11,14 +11,8 @@
  * and hard-coded to one number of dimensions, so don't expect much.
  * 
  */
-#ifndef _VEC_H_
-#define _VEC_H_
-
-#include "pico/float.h"
-
-#ifndef NO_PRINT
-#include <stdio.h>
-#endif // NO_PRINT
+#ifndef VEC_H
+#define VEC_H
 
 typedef struct { float v[3]; } vec3_t;
 
@@ -137,6 +131,6 @@ void vec_print(vec3_t *v);
  */
 void vec_println(vec3_t *v);
 
-#endif // NO_PRINT
+#endif // ifndef NO_PRINT
 
-#endif // _VEC_H_
+#endif /* VEC_H */

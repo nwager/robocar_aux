@@ -1,0 +1,51 @@
+.program wheel_rev
+
+; Read wheel revolution sensor pin and set interrupt flag when detection
+; occurs. After detection, sleep for a bit to debounce.
+
+; Fastest wheel revolution should be around 10 ms (31.2 m/s or 70 mph).
+
+.wrap_target
+    ; wait for falling edge
+    wait 1 pin 0
+    wait 0 pin 0
+    irq set 0 ; set interrupt flag
+    nop [10-1] ; wait 5 ms (10 2000Hz cycles)
+    ; assume interrupt will be cleared in time
+.wrap
+
+% c-sdk {
+
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+void wheel_rev_program_init(PIO pio, uint sm, uint offset, uint pin) {
+    float freq = 2000.0;
+    
+    // Pull up detect pin
+    gpio_pull_up(pin);
+
+    // Sets up state machine and wrap target.
+    pio_sm_config c = wheel_rev_program_get_default_config(offset);
+
+    // Set input pin
+    sm_config_set_in_pins(&c, pin);
+
+    // Set the pin direction to input (in PIO).
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);
+
+    // Enable interrupt source
+    pio_set_irq0_source_enabled(pio, pis_interrupt0, true);
+    
+    // Allow PIO to control GPIO pin (as input).
+    pio_gpio_init(pio, pin);
+
+    // Set clock divider.
+    sm_config_set_clkdiv(&c, (float)clock_get_hz(clk_sys) / freq);
+
+    // Load config and jump to start of program.
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+%}

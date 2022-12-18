@@ -11,11 +11,12 @@
  * 
  */
 
-#ifndef _TYPE_UTILS_H_
-#define _TYPE_UTILS_H_
+#ifndef TYPE_UTILS_H
+#define TYPE_UTILS_H
 
 #include <stdint.h>
-#include <FreeRTOS.h>
+
+#include "pico/stdlib.h"
 
 #include "vec3.h"
 
@@ -47,4 +48,4 @@ typedef struct {
     float vel;
 } velocity_stamped_t;
 
-#endif // _TYPE_UTILS_H_
+#endif /* TYPE_UTILS_H */

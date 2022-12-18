@@ -1,23 +1,45 @@
+#include <limits.h> // for ULONG_MAX
+
+#include <FreeRTOS.h>
+#include <task.h>
+#include <queue.h>
+
+#include "pico/stdlib.h"
+#include "hardware/gpio.h"
+#include "hardware/pio.h"
+// generated pio header
+#include "wheel_rev.pio.h"
+
+#include "type_utils.h"
+#include "mpu6050.h"
+
 #include "velocity_handler.h"
 
+#define WHEEL_REV_GPIO 15
+
+#define WHEEL_REV_PIO pio0
+#define WHEEL_REV_PIO_IRQ_NUM 0
+#define WHEEL_REV_CPU_IRQ PIO0_IRQ_0
+
 #define MICROS_TO_S(t) (((float)(t)) / 1000000.0)
+
+#define PI 3.14159
+#define WHEEL_R_M (49.68 / 1000)
+#define WHEEL_C_M (2.0 * PI * WHEEL_R_M)
 
 static absolute_time_t prev_time, curr_time;
 static TaskHandle_t update_vel_task_handle;
 
-static void wheel_rev_isr(uint gpio, uint32_t event_mask) {
-    (void)gpio;
-    (void)event_mask;
-
-    prev_time = curr_time;
-    curr_time = get_absolute_time();
-    xTaskNotifyFromISR(
-        update_vel_task_handle,
-        WHEEL_NOTIF_MASK,
-        eSetBits,
-        NULL
-    );
-}
+/**
+ * @brief Interrupt handler for wheel revolution detection.
+ * 
+ */
+static void wheel_rev_isr();
+/**
+ * @brief Initializes wheel revolution detector PIO.
+ * 
+ */
+static void init_wheel_rev_pio();
 
 void update_vel_task(void *p) {
     update_vel_task_handle = xTaskGetCurrentTaskHandle();
@@ -25,18 +47,13 @@ void update_vel_task(void *p) {
     curr_time = nil_time;
     prev_time = nil_time;
 
-    velocity_stamped_t calc_vel, tmp_vel;
+    velocity_stamped_t tmp_vel;
 
     accel_stamped_t prev_accel, tmp_accel;
     prev_accel.time = nil_time;
 
-    gpio_pull_up(WHEEL_REV_GPIO);
-    gpio_set_irq_enabled_with_callback(
-        WHEEL_REV_GPIO,
-        GPIO_IRQ_EDGE_FALL,
-        true,
-        wheel_rev_isr
-    );
+    // pio
+    init_wheel_rev_pio();
 
     update_vel_task_arg_t *arg = p;
     uint32_t notif_val;
@@ -45,17 +62,23 @@ void update_vel_task(void *p) {
         xTaskNotifyWait(0, ULONG_MAX, &notif_val, portMAX_DELAY);
 
         if ((notif_val & WHEEL_NOTIF_MASK) && !is_nil_time(prev_time)) {
-            // wheel
+            
+            // process new wheel measurement
+
             umicros_t dt_us = absolute_time_diff_us(prev_time, curr_time);
 
-            calc_vel.vel = WHEEL_C_M / MICROS_TO_S(dt_us);
-            calc_vel.time = get_absolute_time();
+            tmp_vel.vel = WHEEL_C_M / MICROS_TO_S(dt_us);
+            tmp_vel.time = get_absolute_time();
 
-            xQueueOverwrite(arg->vel_queue, &calc_vel);
+            xQueueOverwrite(arg->vel_queue, &tmp_vel);
         } else if (notif_val & ACCEL_NOTIF_MASK) {
-            // accel
+            
+            // no wheel measurement, process new acceleration measurement
+            
+            // get current acceleration
             if (xQueuePeek(arg->accel_queue, &tmp_accel, 0) == pdFALSE)
                 continue;
+            // get current velocity
             if (xQueuePeek(arg->vel_queue, &tmp_vel, 0) == pdFALSE)
                 continue;
     
@@ -76,4 +99,31 @@ void update_vel_task(void *p) {
             prev_accel = tmp_accel;
         }
     }
+}
+
+static void wheel_rev_isr() {
+    pio_interrupt_clear(WHEEL_REV_PIO, WHEEL_REV_PIO_IRQ_NUM);
+    prev_time = curr_time;
+    curr_time = get_absolute_time();
+    xTaskNotifyFromISR(
+        update_vel_task_handle,
+        WHEEL_NOTIF_MASK,
+        eSetBits,
+        NULL
+    );
+}
+
+static void init_wheel_rev_pio() {
+    PIO pio = pio0;
+    uint pio_irq = PIO0_IRQ_0;
+
+    uint sm = pio_claim_unused_sm(WHEEL_REV_PIO, true);
+    uint offset = pio_add_program(WHEEL_REV_PIO, &wheel_rev_program);
+
+    // set pio interrupt handler
+    irq_set_exclusive_handler(WHEEL_REV_CPU_IRQ, wheel_rev_isr);
+    // enable pio interrupt for cpu
+    irq_set_enabled(WHEEL_REV_CPU_IRQ, true);
+    
+    wheel_rev_program_init(WHEEL_REV_PIO, sm, offset, WHEEL_REV_GPIO);
 }
