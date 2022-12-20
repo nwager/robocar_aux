@@ -12,6 +12,7 @@
 
 #include "type_utils.h"
 #include "mpu6050.h"
+#include "math_utils.h"
 
 #include "velocity_handler.h"
 
@@ -23,7 +24,6 @@
 
 #define MICROS_TO_S(t) (((float)(t)) / 1000000.0)
 
-#define PI 3.14159
 #define WHEEL_R_M (49.68 / 1000)
 #define WHEEL_C_M (2.0 * PI * WHEEL_R_M)
 

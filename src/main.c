@@ -8,12 +8,14 @@
 #include "pico/binary_info.h"
 #include "hardware/i2c.h"
 
+#include "freertos_hooks.h"
 #include "type_utils.h"
 #include "vec3.h"
 #include "velocity_handler.h"
 #include "task_names.h"
 #include "mpu6050.h"
-#include "freertos_hooks.h"
+#include "vehicle_control.h"
+#include "math_utils.h"
 
 #define MASTER_CONTROL_MSG_CODE 0xFF
 
@@ -27,7 +29,7 @@ typedef struct {
 } msg_header_t;
 
 typedef struct {
-    control_msg_t *control_state;
+    QueueHandle_t control_queue;
     QueueHandle_t accel_queue;
     QueueHandle_t vel_queue;
 } process_master_task_arg_t;
@@ -40,13 +42,16 @@ static void send_error_master(uint n_bytes);
 static inline bool read_master_header(msg_header_t *dst);
 
 /**
- * @brief Sets up acceleration and velocity queues and initializes them
- *     with 0-values.
+ * @brief Sets up control, acceleration, and velocity queues and initializes
+ *     them with 0-values.
  * 
- * @param acc Pointer to acceleration queue handle to set.
- * @param vel Pointer to velocity queue handle to set.
+ * @param control_queue Pointer to control queue handle to set.
+ * @param accel_queue Pointer to acceleration queue handle to set.
+ * @param vel_queue Pointer to velocity queue handle to set.
  */
-static void setup_queues(QueueHandle_t *accq, QueueHandle_t *velq);
+static void setup_queues(QueueHandle_t *control_queue,
+                         QueueHandle_t *accecl_queue,
+                         QueueHandle_t *vel_queue);
 static void i2c_setup();
 
 int main() {
@@ -57,13 +62,11 @@ int main() {
     // i2c init
     i2c_setup();
 
-    control_msg_t control_state = { 0.0, 0.0 };
-
-    QueueHandle_t accel_queue, vel_queue;
-    setup_queues(&accel_queue, &vel_queue);
+    QueueHandle_t control_queue, accel_queue, vel_queue;
+    setup_queues(&control_queue, &accel_queue, &vel_queue);
 
     process_master_task_arg_t process_master_arg = {
-        &control_state,
+        control_queue,
         accel_queue,
         vel_queue
     };
@@ -76,7 +79,9 @@ int main() {
         NULL
     );
 
-    mpu6050_task_arg_t mpu6050_arg = { &control_state, accel_queue };
+    mpu6050_task_arg_t mpu6050_arg = {
+        accel_queue
+    };
     xTaskCreate(
         mpu6050_task,
         MPU6050_TASK_NAME,
@@ -86,13 +91,38 @@ int main() {
         NULL
     );
 
-    update_vel_task_arg_t update_vel_arg = { vel_queue, accel_queue };
+    update_vel_task_arg_t update_vel_arg = {
+        vel_queue,
+        accel_queue
+    };
     xTaskCreate(
         update_vel_task,
         UPDATE_VEL_TASK_NAME,
         512,
         &update_vel_arg,
         tskIDLE_PRIORITY + 1,
+        NULL
+    );
+
+    pid_vel_task_arg_t pid_vel_arg = {
+        control_queue,
+        vel_queue
+    };
+    xTaskCreate(
+        pid_vel_task,
+        PID_VEL_TASK_NAME,
+        256,
+        &pid_vel_arg,
+        configMAX_PRIORITIES - 1,
+        NULL
+    );
+
+    xTaskCreate(
+        actuation_task,
+        ACTUATION_TASK_NAME,
+        256,
+        NULL,
+        configMAX_PRIORITIES - 1,
         NULL
     );
 
@@ -106,7 +136,8 @@ void process_master_task(void *p) {
     
     process_master_task_arg_t *arg = p;
 
-    TaskHandle_t mpu6050_task = xTaskGetHandle(MPU6050_TASK_NAME);
+    TaskHandle_t mpu6050_task_handle = xTaskGetHandle(MPU6050_TASK_NAME);
+    TaskHandle_t actu_task_handle = xTaskGetHandle(ACTUATION_TASK_NAME);
 
     while (1) {
         vTaskDelayUntil(&start_time, pdMS_TO_TICKS(100));
@@ -123,8 +154,19 @@ void process_master_task(void *p) {
                 send_error_master(hdr.payload_size);
                 continue;
             }
-            control_msg_t msg;
-            read_from_master((uint8_t*)&msg, hdr.payload_size);
+            control_msg_t control_msg;
+            read_from_master((uint8_t*)&control_msg, hdr.payload_size);
+            xQueueOverwrite(arg->control_queue, &control_msg);
+            // actuate servo
+
+            uint servo_pwm = mapf(
+                control_msg.steer, -PI, PI, PWM_MIN, PWM_MAX
+            );
+            xTaskNotify(
+                actu_task_handle,
+                format_actuation_notif(DEVICE_SERVO, servo_pwm),
+                eSetBits
+            );
             putchar_raw(0x00); // ack byte
             continue;
         }
@@ -135,7 +177,7 @@ void process_master_task(void *p) {
                 send_error_master(hdr.payload_size);
                 continue;
             }
-            xTaskNotifyGive(mpu6050_task);
+            xTaskNotifyGive(mpu6050_task_handle);
             putchar_raw(0x00); // ack byte
             continue;
         }
@@ -180,7 +222,12 @@ void process_master_task(void *p) {
 
         // not a control msg, master requests control data
         if (hdr.payload_size == sizeof(control_msg_t)) {
-            send_to_master((uint8_t*)(arg->control_state), hdr.payload_size);
+            control_msg_t ctrl_state;
+            if (xQueuePeek(arg->control_queue, &ctrl_state, 0) == pdTRUE) {
+                send_to_master((uint8_t*)(&ctrl_state), hdr.payload_size);
+            } else {
+                send_error_master(hdr.payload_size);
+            }
         } else {
             send_error_master(hdr.payload_size);
         }
@@ -219,14 +266,21 @@ static inline bool read_master_header(msg_header_t *dst) {
         ) == sizeof(msg_header_t);
 }
 
-static void setup_queues(QueueHandle_t *accq, QueueHandle_t *velq) {
-    *accq = xQueueCreate(1, sizeof(accel_stamped_t));
-    accel_stamped_t zero_a = { nil_time, {0, 0, 0} };
-    xQueueSendToBack(*accq, &zero_a, 0);
+static void setup_queues(QueueHandle_t *control_queue,
+                         QueueHandle_t *accel_queue,
+                         QueueHandle_t *vel_queue) {
 
-    *velq = xQueueCreate(1, sizeof(velocity_stamped_t));
-    velocity_stamped_t zero_v = { nil_time, 0 };
-    xQueueSendToBack(*velq, &zero_v, 0);
+    *control_queue = xQueueCreate(1, sizeof(control_msg_t));
+    control_msg_t zero_control = { 0.0, 0.0 };
+    xQueueSendToBack(*control_queue, &zero_control, 0);
+    
+    *accel_queue = xQueueCreate(1, sizeof(accel_stamped_t));
+    accel_stamped_t zero_accel = { nil_time, {0, 0, 0} };
+    xQueueSendToBack(*accel_queue, &zero_accel, 0);
+
+    *vel_queue = xQueueCreate(1, sizeof(velocity_stamped_t));
+    velocity_stamped_t zero_vel = { nil_time, 0 };
+    xQueueSendToBack(*vel_queue, &zero_vel, 0);
 }
 
 static void i2c_setup() {

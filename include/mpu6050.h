@@ -51,7 +51,6 @@ extern vec3_t gravity_offset;
 extern vec3_t fwd_dir;
 
 typedef struct {
-    control_msg_t *control_state; // current controls
     QueueHandle_t accel_queue; // queue to send acceleration data
 } mpu6050_task_arg_t;
 

@@ -20,7 +20,10 @@
 
 #include "vec3.h"
 
-/// @brief Unsigned microseconds.
+/**
+ * @brief Unsigned microseconds.
+ * 
+ */
 typedef uint64_t umicros_t;
 
 /**

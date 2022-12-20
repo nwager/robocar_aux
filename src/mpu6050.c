@@ -39,7 +39,6 @@ static void mpu6050_reset();
 void mpu6050_task(void *p) {
 
     mpu6050_task_arg_t *arg = p;
-    float *speed_ptr = &(arg->control_state->vel);
     QueueHandle_t accel_queue = arg->accel_queue;
 
     // init mpu6050

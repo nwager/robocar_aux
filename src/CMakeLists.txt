@@ -5,6 +5,8 @@ add_executable(${TARGET_NAME}
     mpu6050.c
     velocity_handler.c
     vec3.c
+    math_utils.c
+    vehicle_control.c
 )
 
 pico_generate_pio_header(${TARGET_NAME}
@@ -28,6 +30,7 @@ target_link_libraries(${TARGET_NAME}
     hardware_i2c
     hardware_gpio
     hardware_pio
+    hardware_pwm
 )
 
 # enable usb
