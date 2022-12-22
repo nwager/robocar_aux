@@ -18,6 +18,7 @@
 #define MPU6050_H
 
 #include <queue.h> // for QueueHandle_t
+#include <semphr.h>
 
 #include "type_utils.h" // for control_msg_t
 #include "vec3.h" // for vec3_t
@@ -52,6 +53,7 @@ extern vec3_t fwd_dir;
 
 typedef struct {
     QueueHandle_t accel_queue; // queue to send acceleration data
+    SemaphoreHandle_t serial_mutex;
 } mpu6050_task_arg_t;
 
 /**

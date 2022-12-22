@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <limits.h> // for ULONG_MAX
+
 #include <FreeRTOS.h>
 #include <task.h>
 #include <queue.h>
+#include <semphr.h>
+
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
@@ -10,6 +13,7 @@
 #include "type_utils.h"
 #include "velocity_handler.h"
 #include "task_names.h"
+#include "actuation.h"
 
 #include "mpu6050.h"
 
@@ -29,6 +33,8 @@ float accel_range = 2.0;
 vec3_t gravity_offset = { 0.0, 0.0, 10.0 };
 vec3_t fwd_dir = { 1.0, 0.0, 0.0 };
 
+static SemaphoreHandle_t serial_mutex;
+
 /**
  * @brief Reset MPU6050 by waking it up and setting accelerometer range
  *     and DLPF frequency.
@@ -39,6 +45,7 @@ static void mpu6050_reset();
 void mpu6050_task(void *p) {
 
     mpu6050_task_arg_t *arg = p;
+    serial_mutex = arg->serial_mutex;
     QueueHandle_t accel_queue = arg->accel_queue;
 
     // init mpu6050
@@ -48,6 +55,7 @@ void mpu6050_task(void *p) {
     TaskHandle_t update_vel_task = xTaskGetHandle(UPDATE_VEL_TASK_NAME);
 
     while (1) {
+        // check if reset flag is set
         if (xTaskNotifyWait(0, ULONG_MAX, NULL, 0) == pdTRUE) {
             mpu6050_reset();
             vTaskDelay(pdMS_TO_TICKS(50)); // give it time to reset
@@ -119,6 +127,9 @@ void mpu6050_get_accel(vec3_t *out) {
 #define ACCEL_INTERVAL_MS 20
 #define NUM_FWD_READINGS (REC_FWD_MS / ACCEL_INTERVAL_MS)
 void mpu6050_calibrate() {
+    // needs to take control of car so don't read from master
+    xSemaphoreTake(serial_mutex, portMAX_DELAY);
+
     // Gravity offset: mean of readings taken while stationary.
 
     vec3_t grav_buf[NUM_GRAV_READINGS];
@@ -132,17 +143,25 @@ void mpu6050_calibrate() {
     // increasing forward acceleration.
 
     // TODO: automate car forward movement when recording
+    actuate_device(DEVICE_ID_SERVO, angle_to_pwm(0.0), pdMS_TO_TICKS(500));
+    actuate_device(DEVICE_ID_ESC, ESC_PWM_ZERO + 200, pdMS_TO_TICKS(500));
 
     vec3_t fwd_buf[NUM_FWD_READINGS];
     for (int i = 0; i < NUM_FWD_READINGS; i++) {
         mpu6050_get_accel(fwd_buf + i);
         sleep_ms(ACCEL_INTERVAL_MS);
     }
+
+    actuate_device(DEVICE_ID_ESC, ESC_PWM_ZERO, pdMS_TO_TICKS(500));
+
     vec_mean(fwd_buf, NUM_FWD_READINGS, &fwd_dir);
     // remove gravity offset
     vec_sub(&fwd_dir, &gravity_offset, &fwd_dir);
     // normalize
     vec_scalar_div(&fwd_dir, vec_mag(&fwd_dir), &fwd_dir);
+
+    // return serial control
+    xSemaphoreGive(serial_mutex);
 }
 
 float mpu6050_get_fwd_from_total(vec3_t *total_accel) {

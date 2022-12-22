@@ -6,7 +6,8 @@ add_executable(${TARGET_NAME}
     velocity_handler.c
     vec3.c
     math_utils.c
-    vehicle_control.c
+    actuation.c
+    brain_interface.c
 )
 
 pico_generate_pio_header(${TARGET_NAME}

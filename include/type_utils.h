@@ -27,7 +27,7 @@
 typedef uint64_t umicros_t;
 
 /**
- * @brief Control message sent to, or received from, master.
+ * @brief Control message sent to, or received from, brain.
  * 
  */
 typedef struct { float vel, steer; } control_msg_t;

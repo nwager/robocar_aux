@@ -9,7 +9,9 @@
 #include "task_names.h"
 #include "math_utils.h"
 
-#include "vehicle_control.h"
+#include "actuation.h"
+
+#include <stdio.h>
 
 #define MS_TO_S(t) (((float)(t)) / 1000.0)
 
@@ -26,25 +28,35 @@
 #define PWM_PERIOD_US 2000
 
 #define NUM_PWM 2
-#define MOTOR_GPIO 19
+#define ESC_GPIO 19
 #define SERVO_GPIO 18
-static uint8_t pwm_gpios[NUM_PWM] = { MOTOR_GPIO, SERVO_GPIO };
+static const uint8_t const pwm_gpios[NUM_PWM] = { ESC_GPIO, SERVO_GPIO };
 
 /**
  * @brief Proportional error coefficient.
  * 
  */
-static const float kp = 1.0;
+static const float K_P = 25.0;
 /**
  * @brief Integral error coefficient.
  * 
  */
-static const float ki = 1.0;
+static const float K_I = 1.0;
 /**
  * @brief Derivative error coefficient.
  * 
  */
-static const float kd = 1.0;
+static const float K_D = 5.0;
+
+/**
+ * @brief Frequency of velocity PID updates in Hz.
+ * 
+ */
+static const uint PID_HZ = 10;
+
+static QueueHandle_t act_queue;
+static TaskHandle_t actuation_task_handle;
+static bool actuation_initialized = false;
 
 /**
  * @brief Initialize all GPIOs in pwm_gpios as PWM devices.
@@ -76,18 +88,18 @@ void pid_vel_task(void *p) {
     float i_err = 0.0;
     float d_err;
 
-    uint16_t output;
+    uint output;
 
-    const float dt = 0.02;
+    const float dt = 1.0 / PID_HZ;
 
     while (1) {
-        xTaskDelayUntil(&start_time, pdMS_TO_TICKS((int)(1000.0 * dt)));
+        xTaskDelayUntil(&start_time, pdMS_TO_TICKS(1000 / PID_HZ));
 
         if (xQueuePeek(arg->control_queue, &curr_control, 0) == pdFALSE)
             continue;
         if (xQueuePeek(arg->vel_queue, &curr_vel_stamp, 0) == pdFALSE)
             continue;
-
+        
         err = curr_control.vel - curr_vel_stamp.vel;
 
         p_err = err;
@@ -95,51 +107,53 @@ void pid_vel_task(void *p) {
         d_err = (err - prev_err) / dt;
 
         output = clampi(
-            PWM_ZERO + ((kp * p_err) + (ki * i_err) + (kd * d_err)),
-            PWM_MIN,
-            PWM_MAX
+            ESC_PWM_ZERO + ((K_P * p_err) + (K_I * i_err) + (K_D * d_err)),
+            ESC_PWM_MIN,
+            ESC_PWM_MAX
         );
 
-        xTaskNotify(
-            actu_task_handle,
-            format_actuation_notif(DEVICE_ESC, output),
-            eSetBits
-        );
+        actuate_device(DEVICE_ID_ESC, output, 0);
 
         prev_err = err;
     }
 }
 
 void actuation_task(void *p) {
-    (void)p;
+
+    actuation_task_arg_t *arg = p;
+
+    actuation_task_handle = xTaskGetCurrentTaskHandle();
+    act_queue = arg->act_queue;
+
+    actuation_initialized = true;
 
     // set up PWM
     pwm_init_devices();
 
-    actu_device_id_t device_id;
-    uint16_t pwm_micros;
-    uint32_t notif_val;
+    actuation_item_t item;
 
     while (1) {
-        if (xTaskNotifyWait(0, ULONG_MAX, &notif_val, 0) == pdFALSE)
+        if (xTaskNotifyWait(0, ULONG_MAX, NULL, portMAX_DELAY) == pdFALSE)
             continue;
         
-        device_id = notif_val >> ACTU_DEVICE_ID_SHIFT;
-        pwm_micros = notif_val & ACTU_PWM_MASK;
+        while (uxQueueMessagesWaiting(arg->act_queue) > 0) {
+            if (xQueueReceive(arg->act_queue, &item, 0) == pdFALSE)
+                continue;
+            
+            uint device_gpio;
 
-        switch (device_id) {
-            case DEVICE_ESC:
-                // actuate esc
-                break;
-            case DEVICE_SERVO:
-                // actuate servo
-                break;
+            switch (item.id) {
+                case DEVICE_ID_ESC:
+                    device_gpio = ESC_GPIO;
+                    break;
+                case DEVICE_ID_SERVO:
+                    device_gpio = SERVO_GPIO;
+                    break;
+            }
+
+            pwm_write_us(device_gpio, item.value);
         }
     }
-}
-
-uint32_t format_actuation_notif(actu_device_id_t id, uint pwm) {
-    return (id << ACTU_DEVICE_ID_SHIFT) | (pwm & ACTU_PWM_MASK);
 }
 
 static void pwm_init_devices() {
@@ -150,9 +164,33 @@ static void pwm_init_devices() {
         pwm_set_clkdiv_int_frac(slice, PWM_CDIV_INT, PWM_CDIV_FRAC);
         pwm_set_wrap(slice, PWM_WRAP);
         pwm_set_enabled(slice, true);
-        // start at neutral
-        pwm_write_us(pwm_gpios[i], PWM_ZERO);
     }
+    // start at neutral
+    pwm_write_us(SERVO_GPIO, SERVO_PWM_ZERO);
+    pwm_write_us(ESC_GPIO, ESC_PWM_ZERO);
+}
+
+uint angle_to_pwm(float angle) {
+    float sig = mapf(
+        angle,
+        SERVO_MIN_ANGLE, SERVO_MAX_ANGLE,
+        SERVO_PWM_MIN, SERVO_PWM_MAX
+    );
+    return clampi(sig, SERVO_PWM_MIN, SERVO_PWM_MAX);
+}
+
+bool actuate_device(actuation_device_id_t id,
+                    uint value,
+                    TickType_t timeout) {
+
+    if (!actuation_initialized)
+        return false;
+
+    actuation_item_t item = { value, id };
+
+    if (xQueueSendToBack(act_queue, &item, timeout) == pdFALSE)
+        return false;
+    xTaskNotifyGive(actuation_task_handle);
 }
 
 static inline void pwm_write_us(uint gpio, uint us) {

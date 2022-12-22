@@ -1,9 +1,10 @@
 import serial
 import struct
+import time
 
 PICO_PORT = "/dev/ttyACM0"
 
-ser = serial.Serial(PICO_PORT, 115200, timeout=0.2)
+ser = serial.Serial(PICO_PORT, 115200, timeout=0.5)
 
 while True:
     user_input = input("Command (hex): ")
@@ -13,6 +14,21 @@ while True:
         print("Invalid command")
         continue
 
+    if cmd == 0xFF:
+        # ser.write(bytes([cmd, 2*4])) # header
+        control = input("[m/s, radians]: ")
+        try:
+            vel, steer = [float(s) for s in control.split(',', 1)]
+            ser.write(bytes([cmd, 2*4]))
+            data = struct.pack("2f", vel, steer)
+            ser.write(data)
+            time.sleep(0.5)
+            while ser.in_waiting > 0:
+                ser.read(1)
+        except ValueError:
+            print("Invalid input")
+
+'''
     if cmd == 0xFF:
         ser.write(bytes([cmd, 2*4]))
         ser.write(bytes([1, 2, 3, 4, 5, 6, 7, 8]))
@@ -37,3 +53,4 @@ while True:
         data = ser.read(8)
         vals = struct.unpack("2f", data)
         print(f"Received {vals}")
+'''

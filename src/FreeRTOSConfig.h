@@ -81,9 +81,17 @@
 #define configUSE_DAEMON_TASK_STARTUP_HOOK      0
 
 /* Run time and task stats gathering related definitions. */
-#define configGENERATE_RUN_TIME_STATS           0
-#define configUSE_TRACE_FACILITY                1
-#define configUSE_STATS_FORMATTING_FUNCTIONS    0
+#define configCUSTOM_DEBUG 0
+
+#if(configCUSTOM_DEBUG == 1)
+extern volatile unsigned long runtime_stats_counter;
+extern void setup_runtime_stats_timer();
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() setup_runtime_stats_timer()
+#define portGET_RUN_TIME_COUNTER_VALUE()        runtime_stats_counter
+#endif /* configCUSTOM_DEBUG == 1 */
+#define configGENERATE_RUN_TIME_STATS           configCUSTOM_DEBUG
+#define configUSE_TRACE_FACILITY                configCUSTOM_DEBUG
+#define configUSE_STATS_FORMATTING_FUNCTIONS    configCUSTOM_DEBUG
 
 /* Co-routine related definitions. */
 #define configUSE_CO_ROUTINES                   0

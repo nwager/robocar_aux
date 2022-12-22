@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <limits.h> // for ULONG_MAX
 
 #include <FreeRTOS.h>
@@ -64,7 +65,6 @@ void update_vel_task(void *p) {
         if ((notif_val & WHEEL_NOTIF_MASK) && !is_nil_time(prev_time)) {
             
             // process new wheel measurement
-
             umicros_t dt_us = absolute_time_diff_us(prev_time, curr_time);
 
             tmp_vel.vel = WHEEL_C_M / MICROS_TO_S(dt_us);
@@ -72,7 +72,7 @@ void update_vel_task(void *p) {
 
             xQueueOverwrite(arg->vel_queue, &tmp_vel);
         } else if (notif_val & ACCEL_NOTIF_MASK) {
-            
+            continue; // TODO: REMOVE
             // no wheel measurement, process new acceleration measurement
             
             // get current acceleration
