@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.12)
 # Import pico SDK
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
-project(robocar_aux C CXX ASM)
-set(TARGET_NAME robocar_aux)
+project(robocar_router C CXX ASM)
+set(TARGET_NAME ${PROJECT_NAME})
 
 # Initialize SDK
 pico_sdk_init()
