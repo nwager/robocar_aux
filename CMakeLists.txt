@@ -6,8 +6,8 @@ include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 # Import FreeRTOS
 include($ENV{PICO_FREERTOS_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
 
-project(robocar_aux C CXX ASM)
-set(TARGET_NAME robocar_aux)
+project(robocar_router C CXX ASM)
+set(TARGET_NAME ${PROJECT_NAME})
 
 # Initialize SDK
 pico_sdk_init()

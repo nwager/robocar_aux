@@ -150,6 +150,18 @@ int main() {
         NULL
     );
 
+    steering_task_arg_t steering_arg = {
+        control_queue
+    };
+    xTaskCreate(
+        steering_task,
+        STEERING_TASK_NAME,
+        256,
+        &steering_arg,
+        configMAX_PRIORITIES - 2,
+        NULL
+    );
+
     actuation_task_arg_t actuation_arg = {
         act_queue
     };

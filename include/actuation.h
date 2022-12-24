@@ -50,6 +50,10 @@ typedef struct {
 } pid_vel_task_arg_t;
 
 typedef struct {
+    QueueHandle_t control_queue;
+} steering_task_arg_t;
+
+typedef struct {
     QueueHandle_t act_queue;
 } actuation_task_arg_t;
 
@@ -59,6 +63,13 @@ typedef struct {
  * @param p Pointer to pid_vel_task_arg_t.
  */
 void pid_vel_task(void *p);
+
+/**
+ * @brief Task that polls control queue to update steering angle.
+ * 
+ * @param p Pointer to steering_task_arg_t.
+ */
+void steering_task(void *p);
 
 /**
  * @brief When notified, reads all items from actuation queue and actuates

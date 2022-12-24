@@ -54,6 +54,12 @@ static const float K_D = 5.0;
  */
 static const uint PID_HZ = 10;
 
+/**
+ * @brief Frequency of steering angle updates in Hz.
+ * 
+ */
+static const uint STEERING_HZ = 10;
+
 static QueueHandle_t act_queue;
 static TaskHandle_t actuation_task_handle;
 static bool actuation_initialized = false;
@@ -102,19 +108,36 @@ void pid_vel_task(void *p) {
         
         err = curr_control.vel - curr_vel_stamp.vel;
 
+        // calculate PID errors
         p_err = err;
         i_err += err * dt;
         d_err = (err - prev_err) / dt;
-
+        // combine errors to get set point
         output = clampi(
             ESC_PWM_ZERO + ((K_P * p_err) + (K_I * i_err) + (K_D * d_err)),
             ESC_PWM_MIN,
             ESC_PWM_MAX
         );
-
         actuate_device(DEVICE_ID_ESC, output, 0);
 
         prev_err = err;
+    }
+}
+
+void steering_task(void *p) {
+
+    TickType_t start_time = xTaskGetTickCount();
+
+    steering_task_arg_t *arg = p;
+    control_msg_t control;
+
+    while (1) {
+        xTaskDelayUntil(&start_time, pdMS_TO_TICKS(1000 / STEERING_HZ));
+
+        if (xQueuePeek(arg->control_queue, &control, 0) == pdFALSE)
+            continue;
+        
+        actuate_device(DEVICE_ID_SERVO, angle_to_pwm(control.steer), 0);
     }
 }
 
@@ -188,9 +211,10 @@ bool actuate_device(actuation_device_id_t id,
 
     actuation_item_t item = { value, id };
 
-    if (xQueueSendToBack(act_queue, &item, timeout) == pdFALSE)
-        return false;
-    xTaskNotifyGive(actuation_task_handle);
+    BaseType_t status = xQueueSendToBack(act_queue, &item, timeout);
+    xTaskNotifyGive(actuation_task_handle); // should always notify
+
+    return status == pdTRUE;
 }
 
 static inline void pwm_write_us(uint gpio, uint us) {
