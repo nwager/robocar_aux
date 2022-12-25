@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <limits.h> // for ULONG_MAX
 
 #include <FreeRTOS.h>
@@ -72,7 +73,6 @@ void update_vel_task(void *p) {
 
             xQueueOverwrite(arg->vel_queue, &tmp_vel);
         } else if (notif_val & ACCEL_NOTIF_MASK) {
-            continue; // TODO: REMOVE
             // no wheel measurement, process new acceleration measurement
             
             // get current acceleration
@@ -82,7 +82,8 @@ void update_vel_task(void *p) {
             if (xQueuePeek(arg->vel_queue, &tmp_vel, 0) == pdFALSE)
                 continue;
     
-            if (!is_nil_time(prev_accel.time)) {
+            if (!is_nil_time(prev_accel.time)
+                && abs(mpu6050_get_fwd_from_total(&(tmp_accel.accel))) > 0.5) {
                 // midpoint Riemann sum
                 float prev_fwd = mpu6050_get_fwd_from_total(&(prev_accel.accel));
                 float curr_fwd = mpu6050_get_fwd_from_total(&(tmp_accel.accel));

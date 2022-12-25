@@ -77,6 +77,10 @@ int main() {
     // i2c init
     i2c_setup();
 
+    // led init
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+
     QueueHandle_t control_queue, accel_queue, vel_queue, act_queue;
     setup_queues(&control_queue, &accel_queue, &vel_queue, &act_queue);
 
@@ -112,7 +116,7 @@ int main() {
     );
 
     mpu6050_task_arg_t mpu6050_arg = {
-        accel_queue
+        accel_queue,
     };
     xTaskCreate(
         mpu6050_task,
@@ -136,26 +140,26 @@ int main() {
         NULL
     );
 
-    pid_vel_task_arg_t pid_vel_arg = {
+    pid_vel_control_task_arg_t pid_vel_arg = {
         control_queue,
         vel_queue,
         act_queue
     };
     xTaskCreate(
-        pid_vel_task,
-        PID_VEL_TASK_NAME,
+        pid_vel_control_task,
+        PID_VEL_CONTROL_TASK_NAME,
         512,
         &pid_vel_arg,
         configMAX_PRIORITIES - 1,
         NULL
     );
 
-    steering_task_arg_t steering_arg = {
+    steer_control_task_arg_t steering_arg = {
         control_queue
     };
     xTaskCreate(
-        steering_task,
-        STEERING_TASK_NAME,
+        steer_control_task,
+        STEER_CONTROL_TASK_NAME,
         256,
         &steering_arg,
         configMAX_PRIORITIES - 2,
@@ -196,7 +200,7 @@ static void setup_queues(QueueHandle_t *control_queue,
     velocity_stamped_t zero_vel = { nil_time, 0 };
     xQueueSendToBack(*vel_queue, &zero_vel, 0);
 
-    *act_queue = xQueueCreate(4, sizeof(actuation_item_t));
+    *act_queue = xQueueCreate(10, sizeof(actuation_item_t));
 }
 
 static void i2c_setup() {

@@ -16,8 +16,8 @@
 static const char PROCESS_BRAIN_TASK_NAME[] = "Process_Brain_Task";
 static const char MPU6050_TASK_NAME[] = "MPU6050_Task";
 static const char UPDATE_VEL_TASK_NAME[] = "Update_Vel_Task";
-static const char PID_VEL_TASK_NAME[] = "PID_Vel_Task";
-static const char STEERING_TASK_NAME[] = "Steering_Task";
+static const char PID_VEL_CONTROL_TASK_NAME[] = "PID_Vel_Control_Task";
+static const char STEER_CONTROL_TASK_NAME[] = "Steer_Control_Task";
 static const char ACTUATION_TASK_NAME[] = "Actuation_Task";
 
 #endif /* TASK_NAMES_H */

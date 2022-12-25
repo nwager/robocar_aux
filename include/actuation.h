@@ -13,10 +13,11 @@
 #define ACTUATION_H
 
 #include <queue.h>
+#include <semphr.h>
 
 static const int ESC_PWM_MAX = 1900;
 static const int ESC_PWM_ZERO = 1500;
-static const int ESC_PWM_MIN = 1100;
+static const int ESC_PWM_MIN = 1500; // 1100
 
 static const int SERVO_PWM_MAX = 1770;
 static const int SERVO_PWM_ZERO = 1500;
@@ -47,11 +48,11 @@ typedef struct {
     QueueHandle_t control_queue;
     QueueHandle_t vel_queue;
     QueueHandle_t act_queue;
-} pid_vel_task_arg_t;
+} pid_vel_control_task_arg_t;
 
 typedef struct {
     QueueHandle_t control_queue;
-} steering_task_arg_t;
+} steer_control_task_arg_t;
 
 typedef struct {
     QueueHandle_t act_queue;
@@ -60,16 +61,16 @@ typedef struct {
 /**
  * @brief Task that controls velocity with PID control.
  * 
- * @param p Pointer to pid_vel_task_arg_t.
+ * @param p Pointer to pid_vel_control_task_arg_t.
  */
-void pid_vel_task(void *p);
+void pid_vel_control_task(void *p);
 
 /**
  * @brief Task that polls control queue to update steering angle.
  * 
- * @param p Pointer to steering_task_arg_t.
+ * @param p Pointer to steer_control_task_arg_t.
  */
-void steering_task(void *p);
+void steer_control_task(void *p);
 
 /**
  * @brief When notified, reads all items from actuation queue and actuates

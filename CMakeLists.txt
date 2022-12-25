@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.12)
 
+# convenience
+set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
+set(PICO_FREERTOS_PATH $ENV{PICO_FREERTOS_PATH})
+
 # Import pico SDK
-include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 # Import FreeRTOS
-include($ENV{PICO_FREERTOS_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
+include(${PICO_FREERTOS_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
 
 project(robocar_router C CXX ASM)
 set(TARGET_NAME ${PROJECT_NAME})

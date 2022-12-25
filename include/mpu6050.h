@@ -42,18 +42,8 @@
 #define MPU6050_ACCEL_RANGE_8G  (2 << 3)
 #define MPU6050_ACCEL_RANGE_16G (3 << 3)
 
-/// @brief Stores current accelerometer g-range for calculations.
-extern float accel_range;
-
-/// @brief Stores gravity offset vector from calibration.
-extern vec3_t gravity_offset;
-
-/// @brief Stores forward direction from calibration (unit vector).
-extern vec3_t fwd_dir;
-
 typedef struct {
     QueueHandle_t accel_queue; // queue to send acceleration data
-    SemaphoreHandle_t serial_mutex;
 } mpu6050_task_arg_t;
 
 /**
@@ -101,15 +91,33 @@ void mpu6050_set_range(uint8_t range);
  *     floats in m/s/s.
  * 
  * @param out Pointer to output vector to store the measurements.
+ * @return (true) Accelerometer was read successfully.
+ * @return (false) Failed to read accelerometer.
  */
-void mpu6050_get_accel(vec3_t *out);
+bool mpu6050_get_accel(vec3_t *out);
 
 /**
  * @brief Perform calibration procedure to determine gravity offset and
  *     forward direction so readings can be used for linear motion.
+ *     Takes control of esc and servo.
  *
+ * @param grav_offset_out Output vector to store gravity offset.
+ *     Set to NULL to discard return vector.
+ * @param fwd_dir_out Output vector to store forward direction vector.
+ *     Set to NULL to discard return vector.
+ * @return (true) Successfully calibrated.
+ * @return (false) Failed to calibrate.
  */
-void mpu6050_calibrate();
+bool mpu6050_calibrate(vec3_t *grav_offset_out, vec3_t *fwd_dir_out);
+
+/**
+ * @brief Copies the given values into the MPU6050 offset vectors.
+ * 
+ * @param grav_offset_src Pointer to gravity offset vector.
+ * @param fwd_dir_src Pointer to forward direction vector
+ *     (doesn't have to be normalized).
+ */
+void mpu6050_set_offsets(vec3_t *grav_offset_src, vec3_t *fwd_dir_src);
 
 /**
  * @brief Returns the forward component of the given acceleration vector.

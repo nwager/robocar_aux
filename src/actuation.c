@@ -1,12 +1,15 @@
+#include <stdlib.h>
 #include <limits.h> // for ULONG_MAX
 
 #include <FreeRTOS.h>
 #include <task.h>
+#include <semphr.h>
+#include "FreeRTOSConfig.h"
 
+#include "pico/stdlib.h"
 #include "hardware/pwm.h"
 
 #include "type_utils.h"
-#include "task_names.h"
 #include "math_utils.h"
 
 #include "actuation.h"
@@ -17,48 +20,40 @@
 
 #define ACTU_PWM_MASK (((uint32_t)ULONG_MAX) >> ACTU_DEVICE_ID_SHIFT)
 
-/**
- * pwm config settings calculated using formula from
- * https://www.i-programmer.info/programming/hardware/14849-the-pico-in-c-basic-pwm.html?start=2
- * where f_c = 125MHz, f_pwm = 500Hz
- */
-#define PWM_CDIV_INT  3
-#define PWM_CDIV_FRAC 14
-#define PWM_WRAP 64516
-#define PWM_PERIOD_US 2000
-
 #define NUM_PWM 2
-#define ESC_GPIO 19
-#define SERVO_GPIO 18
+#define ESC_GPIO 20
+#define SERVO_GPIO 21
 static const uint8_t const pwm_gpios[NUM_PWM] = { ESC_GPIO, SERVO_GPIO };
 
 /**
  * @brief Proportional error coefficient.
- * 
  */
 static const float K_P = 25.0;
+
 /**
  * @brief Integral error coefficient.
- * 
  */
 static const float K_I = 1.0;
+
 /**
  * @brief Derivative error coefficient.
- * 
  */
 static const float K_D = 5.0;
 
 /**
  * @brief Frequency of velocity PID updates in Hz.
- * 
  */
-static const uint PID_HZ = 10;
+static const uint PID_HZ = 60;
+
+/**
+ * @brief How long to wait between pid integral error resets, in ms.
+ */
+static const uint I_ERR_RESET_INTERVAL_MS = 3000;
 
 /**
  * @brief Frequency of steering angle updates in Hz.
- * 
  */
-static const uint STEERING_HZ = 10;
+static const uint STEERING_HZ = 60;
 
 static QueueHandle_t act_queue;
 static TaskHandle_t actuation_task_handle;
@@ -77,14 +72,13 @@ static void pwm_init_devices();
  */
 static void pwm_write_us(uint gpio, uint micros);
 
-void pid_vel_task(void *p) {
+void pid_vel_control_task(void *p) {
 
     TickType_t start_time = xTaskGetTickCount();
 
-    pid_vel_task_arg_t *arg = p;
-    TaskHandle_t actu_task_handle = xTaskGetHandle(ACTUATION_TASK_NAME);
+    pid_vel_control_task_arg_t *arg = p;
 
-    control_msg_t curr_control;
+    control_msg_t target_control;
     velocity_stamped_t curr_vel_stamp;
 
     float err;
@@ -98,15 +92,30 @@ void pid_vel_task(void *p) {
 
     const float dt = 1.0 / PID_HZ;
 
+    TickType_t last_i_err_reset = start_time;
+
     while (1) {
         xTaskDelayUntil(&start_time, pdMS_TO_TICKS(1000 / PID_HZ));
 
-        if (xQueuePeek(arg->control_queue, &curr_control, 0) == pdFALSE)
+        // check for manual reset
+        if (xTaskNotifyWait(0, ULONG_MAX, NULL, 0) == pdTRUE) {
+            i_err = 0;
+            prev_err = 0;
+        }
+
+        // check for i reset timer
+        TickType_t i_err_reset_dt = xTaskGetTickCount() - last_i_err_reset;
+        if (i_err_reset_dt >= pdMS_TO_TICKS(I_ERR_RESET_INTERVAL_MS)) {
+            i_err = 0;
+            prev_err = 0;
+        }
+
+        if (xQueuePeek(arg->control_queue, &target_control, 0) == pdFALSE)
             continue;
         if (xQueuePeek(arg->vel_queue, &curr_vel_stamp, 0) == pdFALSE)
             continue;
         
-        err = curr_control.vel - curr_vel_stamp.vel;
+        err = target_control.vel - curr_vel_stamp.vel;
 
         // calculate PID errors
         p_err = err;
@@ -118,17 +127,23 @@ void pid_vel_task(void *p) {
             ESC_PWM_MIN,
             ESC_PWM_MAX
         );
-        actuate_device(DEVICE_ID_ESC, output, 0);
+
+        // if under velocity threshold, just stop
+        actuate_device(
+            DEVICE_ID_ESC,
+            abs(target_control.vel) > 0.1 ? output : ESC_PWM_ZERO,
+            0
+        );
 
         prev_err = err;
     }
 }
 
-void steering_task(void *p) {
+void steer_control_task(void *p) {
 
     TickType_t start_time = xTaskGetTickCount();
 
-    steering_task_arg_t *arg = p;
+    steer_control_task_arg_t *arg = p;
     control_msg_t control;
 
     while (1) {
@@ -136,7 +151,7 @@ void steering_task(void *p) {
 
         if (xQueuePeek(arg->control_queue, &control, 0) == pdFALSE)
             continue;
-        
+
         actuate_device(DEVICE_ID_SERVO, angle_to_pwm(control.steer), 0);
     }
 }
@@ -180,12 +195,22 @@ void actuation_task(void *p) {
 }
 
 static void pwm_init_devices() {
+    /*
+     * These magic numbers were chosen so 1 tick = 1 us, meaning you can
+     * set the level equal to the microseconds you want to write.
+     * The wrap is set at 20,000 ticks which is the same as a 20,000 us
+     * period (i.e. 50 Hz used by servos and escs). These aren't the
+     * optimal settings for maximum PWM resolution, but a resolution
+     * of 20,000 is plenty for these devices.
+     */
+    const uint pwm_wrap = 20000;
+    const uint clk_div = 125;
+
     for (int i = 0; i < NUM_PWM; i++) {
         uint slice = pwm_gpio_to_slice_num(pwm_gpios[i]);
-        // set pwm frequency to 500 hz
         gpio_set_function(pwm_gpios[i], GPIO_FUNC_PWM);
-        pwm_set_clkdiv_int_frac(slice, PWM_CDIV_INT, PWM_CDIV_FRAC);
-        pwm_set_wrap(slice, PWM_WRAP);
+        pwm_set_clkdiv_int_frac(slice, clk_div, 0);
+        pwm_set_wrap(slice, pwm_wrap);
         pwm_set_enabled(slice, true);
     }
     // start at neutral
@@ -218,5 +243,5 @@ bool actuate_device(actuation_device_id_t id,
 }
 
 static inline void pwm_write_us(uint gpio, uint us) {
-    pwm_set_gpio_level(gpio, ((uint32_t)us * PWM_WRAP) / PWM_PERIOD_US);
+    pwm_set_gpio_level(gpio, us);
 }

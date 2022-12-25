@@ -1,4 +1,4 @@
-include($ENV{PICO_SDK_PATH}/tools/CMakeLists.txt)
+include(${PICO_SDK_PATH}/tools/CMakeLists.txt)
 
 add_executable(${TARGET_NAME}
     main.c

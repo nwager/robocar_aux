@@ -14,6 +14,11 @@
 #ifndef VEC_H
 #define VEC_H
 
+/**
+ * @brief Struct type for vector of 3 floats. Has the same shape in memory
+ *     as a float[3] for byte-level data transfer.
+ * 
+ */
 typedef struct { float v[3]; } vec3_t;
 
 /**
@@ -57,7 +62,7 @@ void vec_scalar_mul(vec3_t *vec, float scalar, vec3_t *out);
  * @param scalar Scalar value to divide vector.
  * @param out Pointer to output vector.
  */
-void inline vec_scalar_div(vec3_t *vec, float scalar, vec3_t *out) {
+inline void vec_scalar_div(vec3_t *vec, float scalar, vec3_t *out) {
     vec_scalar_mul(vec, 1.0 / scalar, out);
 }
 
